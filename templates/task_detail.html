@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row g-4">
+  <div class="col-lg-7">
+    <div class="card p-4">
+      <h4 class="mb-3">任务 #{{ task.id }}</h4>
+      <p><strong>主题：</strong>{{ task.email_subject }}</p>
+      <p><strong>发件人：</strong>{{ task.sender }}</p>
+      <p><strong>状态：</strong>{{ task.status }}</p>
+      <p><strong>错误：</strong>{{ task.error or "-" }}</p>
+      <p><strong>更新时间：</strong><span class="mono">{{ task.updated_at }}</span></p>
+      <form method="post" action="/api/retry/{{ task.id }}">
+        <button class="btn btn-outline-primary">标记为可重试</button>
+      </form>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card p-4 mb-4">
+      <h5 class="mb-3">附件</h5>
+      {% for attachment in attachments %}
+        <div class="mb-2">
+          <div class="fw-semibold">{{ attachment.filename }}</div>
+          <div class="small text-muted">{{ attachment.kind }} | {{ attachment.mime_type }} | {{ attachment.sha256[:12] }}</div>
+          <a href="/downloads/{{ attachment.file_path.split('downloads/')[-1] }}" target="_blank">打开文件</a>
+        </div>
+      {% endfor %}
+    </div>
+    <div class="card p-4">
+      <h5 class="mb-3">AI 解析结果</h5>
+      <pre class="mb-0" style="white-space: pre-wrap;">{{ result | tojson(indent=2, ensure_ascii=False) }}</pre>
+    </div>
+  </div>
+</div>
+{% endblock %}

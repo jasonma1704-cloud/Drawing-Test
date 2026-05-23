@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card p-3">
+      <div class="text-muted">任务总数</div>
+      <div class="display-6 fw-bold">{{ metrics.task_count }}</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card p-3">
+      <div class="text-muted">已推送飞书</div>
+      <div class="display-6 fw-bold">{{ metrics.notified_count }}</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card p-3">
+      <div class="text-muted">异常/待处理</div>
+      <div class="display-6 fw-bold">{{ metrics.failed_count }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card p-4 mb-4">
+  <h5 class="mb-3">快捷操作</h5>
+  <form method="post" action="/api/run-once">
+    <button class="btn btn-primary">立即拉取邮箱并处理</button>
+  </form>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-8">
+    <div class="card p-4">
+      <h5 class="mb-3">最近任务</h5>
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>主题</th>
+              <th>发件人</th>
+              <th>状态</th>
+              <th>飞书</th>
+              <th>时间</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for task in tasks %}
+            <tr>
+              <td><a href="/tasks/{{ task.id }}">{{ task.id }}</a></td>
+              <td>{{ task.email_subject }}</td>
+              <td>{{ task.sender }}</td>
+              <td><span class="badge text-bg-secondary">{{ task.status }}</span></td>
+              <td>{{ "是" if task.feishu_sent else "否" }}</td>
+              <td class="mono">{{ task.updated_at }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card p-4">
+      <h5 class="mb-3">事件日志</h5>
+      <div class="list-group list-group-flush">
+      {% for event in events %}
+        <div class="list-group-item">
+          <div class="small text-muted mono">{{ event.created_at }}</div>
+          <div class="fw-semibold">{{ event.level|upper }}</div>
+          <div>{{ event.message }}</div>
+        </div>
+      {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

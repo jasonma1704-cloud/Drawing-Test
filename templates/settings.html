@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card p-4">
+  <h4 class="mb-3">运行配置</h4>
+  <div class="row g-3">
+    <div class="col-md-6">
+      <div class="p-3 bg-light rounded">
+        <div class="text-muted">IMAP 账号</div>
+        <div class="fw-semibold">{{ settings.imap_user or "未配置" }}</div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="p-3 bg-light rounded">
+        <div class="text-muted">Qwen 模型</div>
+        <div class="fw-semibold">{{ settings.qwen_model }}</div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="p-3 bg-light rounded">
+        <div class="text-muted">Feishu Webhook</div>
+        <div class="fw-semibold">{{ "已配置" if settings.feishu_webhook_url else "未配置" }}</div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="p-3 bg-light rounded">
+        <div class="text-muted">工程师映射</div>
+        <div class="fw-semibold">{{ engineer_map }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
