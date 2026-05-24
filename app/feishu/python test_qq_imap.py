@@ -3,7 +3,7 @@ import imaplib
 host = "imap.qq.com"
 port = 993
 user = "2834926690@qq.com"
-pwd = "umluggqqdqvwdgid"
+pwd = "fyyrkzhrsdbmddbe"
 
 try:
     conn = imaplib.IMAP4_SSL(host, port)

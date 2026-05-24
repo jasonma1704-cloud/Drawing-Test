@@ -64,15 +64,10 @@ class ImapClient:
         self.settings = get_settings()
 
     def _connect(self) -> imaplib.IMAP4:
-        # 🔥 直接写死 QQ 邮箱正确地址（修复配置读取失败）
-        imap_host = "imap.qq.com"
-        imap_port = 993
-
         if self.settings.imap_ssl:
-            client = imaplib.IMAP4_SSL(imap_host, imap_port)
+            client = imaplib.IMAP4_SSL(self.settings.imap_host, self.settings.imap_port)
         else:
-            client = imaplib.IMAP4(imap_host, imap_port)
-        # 这行是你之前修好的，保持不动
+            client = imaplib.IMAP4(self.settings.imap_host, self.settings.imap_port)
         client.login(self.settings.imap_user, self.settings.imap_password)
         client.select(self.settings.imap_folder)
         return client

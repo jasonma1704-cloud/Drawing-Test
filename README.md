@@ -20,7 +20,7 @@
 ## 快速开始
 
 ```bash
-cp .env.example .env
+cp .env .env
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
