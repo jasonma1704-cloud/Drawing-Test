@@ -1,34 +1,66 @@
 {% extends "base.html" %}
+{% block title %}任务详情 - #{{ task.id }}{% endblock %}
+
 {% block content %}
-<div class="row g-4">
-  <div class="col-lg-7">
-    <div class="card p-4">
-      <h4 class="mb-3">任务 #{{ task.id }}</h4>
-      <p><strong>主题：</strong>{{ task.email_subject }}</p>
-      <p><strong>发件人：</strong>{{ task.sender }}</p>
-      <p><strong>状态：</strong>{{ task.status }}</p>
-      <p><strong>错误：</strong>{{ task.error or "-" }}</p>
-      <p><strong>更新时间：</strong><span class="mono">{{ task.updated_at }}</span></p>
-      <form method="post" action="/api/retry/{{ task.id }}">
-        <button class="btn btn-outline-primary">标记为可重试</button>
-      </form>
-    </div>
-  </div>
-  <div class="col-lg-5">
-    <div class="card p-4 mb-4">
-      <h5 class="mb-3">附件</h5>
-      {% for attachment in attachments %}
-        <div class="mb-2">
-          <div class="fw-semibold">{{ attachment.filename }}</div>
-          <div class="small text-muted">{{ attachment.kind }} | {{ attachment.mime_type }} | {{ attachment.sha256[:12] }}</div>
-          <a href="/downloads/{{ attachment.file_path.split('downloads/')[-1] }}" target="_blank">打开文件</a>
+<div class="container mt-4">
+    <h3>任务详情 #{{ task.id }}</h3>
+    <hr>
+
+    <div class="row">
+        <!-- 左侧区域：任务信息 + AI分析结果 -->
+        <div class="col-md-8">
+            <!-- 基础任务信息 -->
+            <div class="card mb-3">
+                <div class="card-body">
+                    <p><strong>邮件主题：</strong>{{ task.email_subject }}</p>
+                    <p><strong>发件人：</strong>{{ task.sender }}</p>
+                    <p><strong>任务状态：</strong>{{ task.status }}</p>
+                    <p><strong>接收时间：</strong>{{ task.received_at }}</p>
+                    {% if task.error %}
+                    <p><strong>异常信息：</strong>{{ task.error }}</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- AI分析结果 位于任务信息下方 -->
+            <div class="card">
+                <div class="card-header">
+                    AI解析结果
+                </div>
+                <div class="card-body">
+                    {% if result %}
+                    <pre class="mb-0" style="white-space: pre-wrap;">{{ result | tojson_safe(indent=2) }}</pre>
+                    {% else %}
+                    <p class="text-secondary">暂无解析数据</p>
+                    {% endif %}
+                </div>
+            </div>
         </div>
-      {% endfor %}
+
+        <!-- 右侧独立列：附件列表 -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    附件列表
+                </div>
+                <div class="card-body">
+                    {% if attachments %}
+                    <ul class="list-group list-group-flush">
+                        {% for att in attachments %}
+                        <li class="list-group-item">
+                            {{ att.filename }}
+                            <div class="mt-2">
+                                <a href="/downloads/{{ att.file_path }}" class="btn btn-sm btn-outline-primary" download>下载附件</a>
+                            </div>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <p class="text-secondary">暂无上传附件</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
     </div>
-    <div class="card p-4">
-      <h5 class="mb-3">AI 解析结果</h5>
-      <pre class="mb-0" style="white-space: pre-wrap;">{{ result | tojson(indent=2, ensure_ascii=False) }}</pre>
-    </div>
-  </div>
 </div>
 {% endblock %}

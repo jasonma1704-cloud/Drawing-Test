@@ -27,6 +27,14 @@ app = FastAPI(title=settings.app_name)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
+# ======================
+# 🔥 修复：注册中文正常显示的JSON过滤器（无报错版）
+# 解决AI解析结果 \uXXXX 乱码问题
+# ======================
+def tojson_safe(value, indent=2):
+    return json.dumps(value, ensure_ascii=False, indent=indent)
+templates.env.filters["tojson_safe"] = tojson_safe
+
 
 @app.on_event("startup")
 async def startup_event() -> None:
@@ -143,7 +151,7 @@ async def api_run_once():
     results = await asyncio.to_thread(engine.fetch_and_process_once)
     return {
         "count": len(results),
-        "items": [r.__dict__ for r in results],
+        "items": [vars(r) if hasattr(r, '__dict__') else {k: getattr(r, k) for k in dir(r) if not k.startswith('_')} for r in results],
     }
 
 

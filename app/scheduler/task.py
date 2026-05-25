@@ -50,7 +50,7 @@ class WorkflowEngine:
             try:
                 result = self.process_single_message(uid, raw)
                 results.append(result)
-                self.db.set_last_uid(uid)
+                self.imap.mark_as_read(uid)
             except Exception as exc:
                 logger.exception("Failed processing message UID=%s", uid)
                 self.db.log_event("error", f"Processing failed for UID={uid}", {"error": str(exc)})
@@ -59,7 +59,10 @@ class WorkflowEngine:
         return results
 
     def process_single_message(self, uid: str, raw: bytes) -> TaskResult:
+        # 1. 解析邮件
         mail = self.imap.parse_message(uid, raw)
+
+        # 2. 创建任务
         task_id = self.db.upsert_task(
             message_uid=mail.uid,
             email_subject=mail.subject,
@@ -69,43 +72,36 @@ class WorkflowEngine:
             status="received",
         )
 
-        attachments_data: list[tuple[str, bytes, str]] = []
-        import email as _email
-        message = _email.message_from_bytes(raw)
-        max_bytes = self.settings.max_attachment_mb * 1024 * 1024
-        for part in message.walk():
-            disposition = (part.get("Content-Disposition") or "").lower()
-            filename = part.get_filename()
-            if not filename or "attachment" not in disposition:
-                continue
-            payload = part.get_payload(decode=True) or b""
-            if len(payload) > max_bytes:
-                logger.warning("Skip oversized attachment: %s (%s bytes)", filename, len(payload))
-                continue
-            attachments_data.append((filename, payload, part.get_content_type()))
+        # 3. 无附件直接跳过
+        if not mail.attachments:
+            msg = "No image or PDF attachment was found for AI analysis."
+            self.db.update_task_status(task_id, "waiting_attachment", error=msg)
+            return TaskResult(task_id=task_id, status="waiting_attachment", error=msg)
 
-        saved_paths = self.parser.write_attachments_to_disk(mail.uid, message, attachments_data)
-        bundle = self.parser.save_and_filter(
-            mail.uid,
-            mail.attachments,
-        )
+        # ======================
+        # ✅ 核心修复：按时间戳保存附件（有附件才创建，不乱创建文件夹）
+        # ======================
+        bundle = self.parser.save_and_filter(mail.attachments, raw)
 
-        for path in saved_paths:
-            kind = detect_kind(path)
+        # 4. 记录附件到数据库
+        for att in bundle.files:
+            kind = detect_kind(att.stored_path)
             self.db.add_attachment(
                 task_id=task_id,
-                filename=path.name,
-                file_path=str(path),
-                mime_type=guess_mime_type(path.name),
+                filename=att.original_name,
+                file_path=str(att.stored_path),
+                mime_type=att.mime_type,
                 kind=kind,
-                sha256=sha256_file(path),
+                sha256=sha256_file(att.stored_path),
             )
 
+        # 5. 无有效图片 → 结束
         if not bundle.image_inputs:
-            message = "No image or PDF attachment was found for AI analysis."
+            message = "No valid image/PDF for AI analysis."
             self.db.update_task_status(task_id, "waiting_attachment", error=message)
             return TaskResult(task_id=task_id, status="waiting_attachment", error=message)
 
+        # 6. AI 解析
         image_paths = [str(p) for p in bundle.image_inputs]
         analysis = self.qwen.extract_structured_info(
             subject=mail.subject,
@@ -114,11 +110,13 @@ class WorkflowEngine:
             image_paths=image_paths,
         )
 
+        # 7. 推送飞书
         engineer_names = self._pick_engineers(analysis)
         feishu_summary = self._build_feishu_summary(mail.subject, mail.sender, analysis, bundle)
         push_text = self.feishu.build_text_message(mail.subject, feishu_summary, engineer_names)
         push_result = self.feishu.send_text(push_text)
 
+        # 8. 更新任务状态
         final_status = "notified" if push_result.ok else "analysis_done"
         self.db.update_task_status(
             task_id,
@@ -128,16 +126,9 @@ class WorkflowEngine:
             feishu_sent=push_result.ok,
         )
 
-        if self.settings.mark_seen_after_success:
-            self.db.set_last_uid(uid)
-
         return TaskResult(task_id=task_id, status=final_status, result=analysis)
 
-
     async def polling_loop(self, stop_event: asyncio.Event | None = None) -> None:
-        """
-        Background polling loop. It can be started from FastAPI startup.
-        """
         interval = max(10, int(self.settings.poll_interval_seconds))
         stop_event = stop_event or asyncio.Event()
         logger.info("Polling loop started with interval=%ss", interval)
@@ -156,8 +147,6 @@ class WorkflowEngine:
         engineers = self.settings.engineer_names()
         if not engineers:
             return []
-        # Simple but practical heuristic: always notify the first configured engineer.
-        # In production you can map by product line, material, or drawing type.
         return engineers[:1]
 
     def _build_feishu_summary(

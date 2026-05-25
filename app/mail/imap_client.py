@@ -2,14 +2,19 @@ from __future__ import annotations
 
 import email
 import imaplib
+import logging
 from dataclasses import dataclass
 from email.header import decode_header
 from email.message import Message
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import List
+from datetime import datetime
 
 from app.config import get_settings
 from app.utils.file_utils import safe_filename
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -62,35 +67,43 @@ def _extract_text(message: Message) -> str:
 class ImapClient:
     def __init__(self):
         self.settings = get_settings()
+        logger.info("✅ IMAP 客户端初始化完成")
 
     def _connect(self) -> imaplib.IMAP4:
-        if self.settings.imap_ssl:
-            client = imaplib.IMAP4_SSL(self.settings.imap_host, self.settings.imap_port)
-        else:
-            client = imaplib.IMAP4(self.settings.imap_host, self.settings.imap_port)
-        client.login(self.settings.imap_user, self.settings.imap_password)
-        client.select(self.settings.imap_folder)
-        return client
+        imap_host = "imap.qq.com"
+        imap_port = 993
+        logger.info(f"🔌 连接邮箱: {imap_host}:{imap_port}")
+
+        try:
+            if self.settings.imap_ssl:
+                client = imaplib.IMAP4_SSL(imap_host, imap_port)
+            else:
+                client = imaplib.IMAP4(imap_host, imap_port)
+
+            client.login(self.settings.imap_user, self.settings.imap_password)
+            client.select(self.settings.imap_folder)
+            logger.info("✅ 登录成功，文件夹: %s", self.settings.imap_folder)
+            return client
+        except Exception as e:
+            logger.error("❌ 连接失败: %s", str(e))
+            raise
 
     def fetch_unseen_messages(self, since_uid: str | None = None) -> list[tuple[str, bytes]]:
-        """
-        Return raw RFC822 messages with UIDs greater than since_uid (if provided).
-        """
+        logger.info("🔍 开始获取邮件...")
         client = self._connect()
         try:
-            criteria = ["ALL"]
-            if self.settings.use_unread_only:
-                criteria = ["UNSEEN"]
+            criteria = ["UNSEEN"]
             if since_uid:
                 criteria = [f"(UID {int(since_uid) + 1}:*)"]
 
-            search_query = " ".join(criteria)
-            status, data = client.uid("SEARCH", None, search_query)
+            status, data = client.uid("SEARCH", None, " ".join(criteria))
             if status != "OK":
                 return []
 
             uids = data[0].split()
-            raw_messages: list[tuple[str, bytes]] = []
+            logger.info(f"📥 未读邮件数量: {len(uids)}")
+
+            raw_messages = []
             for uid_bytes in uids:
                 uid = uid_bytes.decode()
                 status, msg_data = client.uid("FETCH", uid, "(RFC822)")
@@ -99,8 +112,28 @@ class ImapClient:
                 for item in msg_data:
                     if isinstance(item, tuple) and item[1]:
                         raw_messages.append((uid, item[1]))
+                        logger.info(f"✅ 获取邮件 UID: {uid}")
                         break
             return raw_messages
+        finally:
+            try:
+                client.logout()
+                logger.info("🔌 已断开邮箱")
+            except Exception:
+                pass
+
+    def mark_as_read(self, uid: str) -> None:
+        """
+        新增核心功能：标记邮件为已读
+        处理完成后调用，彻底避免重复扫描、重复处理
+        """
+        client = self._connect()
+        try:
+            # 标记邮件为已读 (Seen)
+            client.uid("STORE", uid, "+FLAGS", "(\\Seen)")
+            logger.info(f"✅ 已标记邮件为已读 UID: {uid}")
+        except Exception as e:
+            logger.error(f"❌ 标记邮件已读失败 UID {uid}: {str(e)}")
         finally:
             try:
                 client.logout()
@@ -108,34 +141,46 @@ class ImapClient:
                 pass
 
     def parse_message(self, uid: str, raw: bytes) -> MailMessage:
+        logger.info(f"📝 解析邮件 UID: {uid}")
         msg = email.message_from_bytes(raw)
         subject = _decode_header(msg.get("Subject"))
         sender = _decode_header(msg.get("From"))
         received_at = _decode_header(msg.get("Date"))
         body_text = _extract_text(msg)
 
-        attachments: list[MailAttachment] = []
+        logger.info(f"📩 主题: {subject}")
+        logger.info(f"📤 发件人: {sender}")
+
+        attachments = []
         for part in msg.walk():
-            disposition = (part.get("Content-Disposition") or "").lower()
             filename = part.get_filename()
-            if not filename or "attachment" not in disposition:
+            if not filename:
                 continue
 
-            decoded_filename = safe_filename(_decode_header(filename))
-            payload = part.get_payload(decode=True) or b""
-            attachment = MailAttachment(
-                filename=decoded_filename,
-                path=Path(decoded_filename),
-                mime_type=part.get_content_type(),
-                size_bytes=len(payload),
-            )
-            attachments.append(attachment)
+            try:
+                decoded_fn = safe_filename(_decode_header(filename))
+                payload = part.get_payload(decode=True) or b""
+                size = len(payload)
 
+                attachment = MailAttachment(
+                    filename=decoded_fn,
+                    path=Path(decoded_fn),
+                    mime_type=part.get_content_type(),
+                    size_bytes=size
+                )
+                attachments.append(attachment)
+                logger.info(f"📎 发现附件: {decoded_fn}")
+
+            except Exception as e:
+                logger.error(f"❌ 解析附件失败: {filename} => {e}")
+                continue
+
+        logger.info(f"✅ 解析完成，附件数: {len(attachments)}")
         return MailMessage(
             uid=uid,
             subject=subject,
             sender=sender,
             received_at=received_at,
             body_text=body_text,
-            attachments=attachments,
+            attachments=attachments
         )
